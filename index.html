@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>专属美食轮盘</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <style>
+    /* 核心样式 */
+    body {
+      background: linear-gradient(135deg, #ffe6f2, #ffd9eb);
+      font-family: 'Microsoft YaHei', cursive;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .wheel-container {
+      position: relative;
+      width: 300px;
+      height: 300px;
+      margin: 20px auto;
+      filter: drop-shadow(0 0 20px rgba(255,105,180,0.2));
+    }
+
+    .background {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 0 30px #ff99cc;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .pointer {
+      position: absolute;
+      width: 40px;
+      top: -20px;
+      left: 130px;
+      z-index: 2;
+      filter: drop-shadow(0 0 8px #ff1493);
+      transform-origin: 50% 100%;
+      animation: pointerFloat 2s ease-in-out infinite;
+    }
+
+    @keyframes pointerFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
+    }
+
+    /* 控制按钮样式 */
+    .controls {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin: 20px 0;
+    }
+
+    .controls button {
+      background: linear-gradient(45deg, #ff85b2, #ff69b4);
+      border: none;
+      padding: 12px 25px;
+      border-radius: 25px;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(255,105,180,0.3);
+    }
+
+    .controls button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 20px rgba(255,105,180,0.4);
+    }
+
+    /* 选项面板 */
+    .options-panel {
+      background: rgba(255,255,255,0.95);
+      padding: 20px;
+      border-radius: 20px;
+      margin: 20px auto;
+      max-width: 400px;
+      backdrop-filter: blur(10px);
+    }
+
+    #optionsList li {
+      background: #fff;
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.3s;
+      box-shadow: 0 2px 8px rgba(255,153,204,0.1);
+    }
+
+    #optionsList li:hover {
+      transform: translateX(10px);
+      box-shadow: 0 4px 15px rgba(255,153,204,0.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 style="text-align:center; color:#ff69b4; text-shadow:2px 2px 4px rgba(255,105,180,0.2);">🍴 今天翻谁的牌子？ 👑</h1>
+    
+    <div class="wheel-container">
+      <img id="background" class="background" src="default-bg.jpg">
+      <canvas id="wheel"></canvas>
+      <img src="pointer.png" class="pointer">
+    </div>
+
+    <div id="result" style="text-align:center; min-height:120px;"></div>
+
+    <div class="options-panel">
+      <h3 style="color:#ff69b4; margin-bottom:15px;">📜 美食名录 📜</h3>
+      <ul id="optionsList"></ul>
+    </div>
+
+    <div class="controls">
+      <button onclick="addOption()">➕ 添加选项</button>
+      <button onclick="spin()">🎡 开始用膳！</button>
+      <button onclick="exportData()">📥 备份数据</button>
+      <button onclick="importData()">📤 恢复数据</button>
+    </div>
+  </div>
+
+  <audio id="spinSound" src="spin-sound.mp3"></audio>
+  <audio id="resultSound" src="success-sound.mp3"></audio>
+
+  <script>
+    // 初始化配置
+    let options = JSON.parse(localStorage.getItem('foodWheelData')) || [];
+    const colors = ["#ffb3d9", "#ffcccc", "#ffd9e6"];
+    let isSpinning = false;
+
+    // 核心功能
+    function drawWheel() {
+      const canvas = document.getElementById('wheel');
+      const ctx = canvas.getContext('2d');
+      const size = 300;
+      canvas.width = size;
+      canvas.height = size;
+
+      ctx.clearRect(0, 0, size, size);
+      const sliceAngle = (2 * Math.PI) / options.length;
+
+      options.forEach((option, index) => {
+        ctx.beginPath();
+        ctx.fillStyle = colors[index % 3];
+        ctx.moveTo(size/2, size/2);
+        ctx.arc(size/2, size/2, size/2, index*sliceAngle, (index+1)*sliceAngle);
+        ctx.fill();
+
+        // 绘制文字
+        ctx.save();
+        ctx.translate(size/2, size/2);
+        ctx.rotate(index*sliceAngle + sliceAngle/2);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 14px 'Microsoft YaHei'";
+        ctx.textAlign = "right";
+        ctx.fillText(option.name, 140, 5);
+        ctx.restore();
+      });
+    }
+
+    function spin() {
+      if (isSpinning) return;
+      if (options.length < 2) return alert("至少需要两个选项哦~");
+      
+      isSpinning = true;
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '<div class="loading">🍳 御厨正在颠勺...</div>';
+      document.getElementById('spinSound').play();
+
+      const rotations = 5 + Math.random() * 3;
+      const targetAngle = rotations * 360 + Math.random() * 360;
+      const wheel = document.querySelector('.wheel-container');
+      
+      wheel.style.transition = 'transform 3.5s cubic-bezier(0.25, 0.1, 0.25, 1)';
+      wheel.style.transform = `rotate(${targetAngle}deg)`;
+
+      setTimeout(() => {
+        const finalAngle = targetAngle % 360;
+        const selectedIndex = Math.floor((360 - finalAngle) / (360 / options.length)) % options.length;
+        showResult(options[selectedIndex]);
+        document.getElementById('resultSound').play();
+        isSpinning = false;
+      }, 3500);
+    }
+
+    function showResult(option) {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = `
+        <div style="animation: fadeIn 0.5s">
+          <h3 style="color:#ff69b4; margin:10px 0;">✨ 钦点 ✨</h3>
+          <div style="font-size:1.2em; margin:10px 0;">${option.name}</div>
+          <img src="${option.image}" 
+               style="width:180px; height:180px; 
+                      border-radius:15px; border:3px solid #ff99cc;
+                      box-shadow:0 4px 15px rgba(255,105,180,0.3)">
+        </div>
+      `;
+    }
+
+    // 数据管理功能
+    function addOption() {
+      const name = prompt("请输入美食名称：");
+      const image = prompt("请输入图片URL：");
+      if (name && image) {
+        options.push({ name, image });
+        refreshOptionList();
+        saveData();
+        drawWheel();
+      }
+    }
+
+    function refreshOptionList() {
+      const list = document.getElementById('optionsList');
+      list.innerHTML = options.map((opt, index) => `
+        <li data-index="${index}">
+          <span>${index + 1}. ${opt.name}</span>
+          <img src="${opt.image}" 
+               style="width:40px; height:40px; 
+                      border-radius:50%; object-fit:cover;
+                      border:2px solid #ff99cc">
+        </li>
+      `).join('');
+      initListInteractions();
+    }
+
+    function initListInteractions() {
+      // 双击编辑
+      document.querySelectorAll('#optionsList li').forEach(item => {
+        item.ondblclick = function() {
+          const index = this.dataset.index;
+          const newName = prompt("修改名称：", options[index].name);
+          const newImage = prompt("新图片URL：", options[index].image);
+          if (newName && newImage) {
+            options[index] = { name: newName, image: newImage };
+            refreshOptionList();
+            saveData();
+            drawWheel();
+          }
+        }
+      });
+
+      // 拖拽排序
+      new Sortable(document.getElementById('optionsList'), {
+        animation: 150,
+        onEnd: function(evt) {
+          const movedItem = options.splice(evt.oldIndex, 1)[0];
+          options.splice(evt.newIndex, 0, movedItem);
+          saveData();
+          drawWheel();
+        }
+      });
+    }
+
+    // 数据持久化
+    function saveData() {
+      localStorage.setItem('foodWheelData', JSON.stringify(options));
+    }
+
+    // 导入导出功能
+    function exportData() {
+      const dataStr = JSON.stringify(options);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `美食轮盘备份_${new Date().toLocaleDateString()}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    }
+
+    function importData() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json';
+      input.onchange = function(e) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function() {
+          try {
+            options = JSON.parse(this.result);
+            refreshOptionList();
+            saveData();
+            drawWheel();
+            alert('数据恢复成功！');
+          } catch (error) {
+            alert('文件格式错误！');
+          }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    }
+
+    // 初始化
+    window.onload = () => {
+      refreshOptionList();
+      drawWheel();
+    }
+  </script>
+</body>
+</html>
